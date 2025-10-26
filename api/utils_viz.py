@@ -1,21 +1,31 @@
 # api/utils_viz.py
 import io
 import base64
+import os
 import numpy as np
 
-# Plotly (gráficas interactivas)
+# Plotly (gráficas interactivas) – es relativamente ligero de importar
 import plotly.express as px
 import plotly.graph_objects as go
 
 # Métricas
-from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
+from sklearn.metrics import confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import label_binarize
 
-# Para dibujar un árbol del RandomForest como imagen PNG embebida
-import matplotlib
-matplotlib.use("Agg")  # backend sin pantalla (servidor)
-import matplotlib.pyplot as plt
-from sklearn import tree
+# ------------------------------------------------------------------
+# Matplotlib: configuración LAZY y segura para servidores (Render)
+# ------------------------------------------------------------------
+def _mpl_setup():
+    """
+    Configura Matplotlib para backend 'Agg' y usa una carpeta de caché
+    escribible en /tmp. Devuelve el módulo pyplot ya importado.
+    """
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/mpl-cache")
+    import matplotlib
+    # fuerza backend sin GUI
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    return plt
 
 
 def fig_to_html(fig):
@@ -67,7 +77,8 @@ def plot_roc_ovr(y_true, proba, classes):
 
     # Caso binario
     if proba.ndim == 2 and proba.shape[1] == 2:
-        y_true_bin = (y_true == classes.max()).astype(int)  # heurística de clase positiva
+        # Heurística: clase positiva = el valor máximo de 'classes'
+        y_true_bin = (y_true == classes.max()).astype(int)
         fpr, tpr, _ = roc_curve(y_true_bin, proba[:, 1])
         auc_val = auc(fpr, tpr)
         fig = go.Figure()
@@ -112,13 +123,11 @@ def plot_pred_proba_hist(proba, positive_index=1):
 def tree_png_html(rf, feature_names, class_names=None, tree_index=0, max_depth=3):
     """
     Renderiza un árbol del RandomForest como <img> (PNG base64) para incrustar en HTML.
-
-    rf            : modelo RandomForest
-    feature_names : lista/Index de nombres de columnas
-    class_names   : nombres de clases (clasificación) o None
-    tree_index    : índice de árbol dentro del bosque
-    max_depth     : profundidad máxima mostrada (mejora legibilidad)
     """
+    # Lazy import de matplotlib (y configuración segura)
+    plt = _mpl_setup()
+    from sklearn import tree  # importar aquí evita cargar tree/pyplot en la home
+
     estimator = rf.estimators_[tree_index]
     fig, ax = plt.subplots(figsize=(14, 8))
     tree.plot_tree(

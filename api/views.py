@@ -8,13 +8,10 @@ import pandas as pd
 import numpy as np
 
 # Tu módulo de ML
-from .ml import model_exists, load_model, predict_df, MODEL_PATH, META_PATH
+from .ml import model_exists, load_model, predict_df, MODEL_PATH
 
-# Utilidades de visualización
-from .utils_viz import (
-    fig_to_html, plot_feature_importance, plot_confusion,
-    plot_roc_ovr, plot_pred_proba_hist, tree_png_html
-)
+# ⛔️ Importante: NO importamos utils_viz arriba para evitar cargar matplotlib/plotly
+# al entrar a la home. Lo haremos dentro de la vista predict_csv.
 
 # === Endpoints simples ===
 @api_view(["GET"])
@@ -105,6 +102,12 @@ def predict_csv(request):
                 proba = np.atleast_2d(y_pred).T  # fallback mínimo
 
         # --- Gráficas ---
+        # 👇 Importamos utils_viz SOLO aquí (cuando realmente se piden gráficas)
+        from .utils_viz import (
+            fig_to_html, plot_feature_importance, plot_confusion,
+            plot_roc_ovr, plot_pred_proba_hist, tree_png_html
+        )
+
         figs_html = []
         # 1) Importancia de features
         figs_html.append(fig_to_html(plot_feature_importance(model, X.columns, top=20)))
@@ -172,7 +175,7 @@ def api_predict(request):
 
     try:
         df = pd.DataFrame(rows)
-        out, preds = predict_df(df)
+        _, preds = predict_df(df)
         return Response({"predictions": preds})
     except Exception as e:
         return Response({"error": str(e)}, status=400)
