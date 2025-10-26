@@ -8,19 +8,19 @@ import pandas as pd
 import numpy as np
 
 # Tu módulo de ML
-from .ml import model_exists, load_model, predict_df, MODEL_PATH
+from .ml import model_exists, load_model, predict_df, MODEL_PATH, META_PATH
 
-# ⛔️ Importante: NO importamos utils_viz arriba para evitar cargar matplotlib/plotly
-# al entrar a la home. Lo haremos dentro de la vista predict_csv.
 
 # === Endpoints simples ===
 @api_view(["GET"])
 def health(request):
     return Response({"status": "ok"})
 
+
 def home(request):
     """
     Página inicial: estado del modelo y features.
+    (Sin importar utils_viz aquí para no cargar Matplotlib en la home)
     """
     ready = model_exists()
     feature_list = []
@@ -41,11 +41,16 @@ def home(request):
         },
     )
 
+
 def train_page(request):
     """Página simple de estado/entrenamiento."""
     ready = model_exists()
-    ctx = {"model_ready": ready, "model_path": Path(str(MODEL_PATH)).name if ready else ""}
+    ctx = {
+        "model_ready": ready,
+        "model_path": Path(str(MODEL_PATH)).name if ready else "",
+    }
     return render(request, "base.html", ctx)
+
 
 # === Predicción desde CSV con tabla + gráficas ===
 def predict_csv(request):
@@ -54,12 +59,20 @@ def predict_csv(request):
       - Tabla con predicciones (primeras 50 filas)
       - Gráficas (feature importance, hist proba, confusión y ROC si hay y_true)
       - Un árbol del RandomForest (tree_index=0, max_depth=3)
+
+    Importamos utils_viz **dentro** de la función para evitar cargar Matplotlib en la home.
     """
     if request.method != "POST":
         return HttpResponseBadRequest("Método no permitido")
 
     if not model_exists():
         return HttpResponseBadRequest("No hay modelo entrenado aún")
+
+    # ⬇️ Import perezoso: sólo cuando realmente necesitamos graficar
+    from .utils_viz import (
+        fig_to_html, plot_feature_importance, plot_confusion,
+        plot_roc_ovr, plot_pred_proba_hist, tree_png_html
+    )
 
     # Acepta ambos nombres de campo
     f = request.FILES.get("csv_file") or request.FILES.get("file")
@@ -97,24 +110,25 @@ def predict_csv(request):
         except Exception:
             try:
                 scores = model.decision_function(X)
-                proba = np.atleast_2d(scores).T if scores.ndim == 1 else scores
+                proba = np.atleast_2d(scores).T if np.ndim(scores) == 1 else scores
             except Exception:
                 proba = np.atleast_2d(y_pred).T  # fallback mínimo
 
         # --- Gráficas ---
-        # 👇 Importamos utils_viz SOLO aquí (cuando realmente se piden gráficas)
-        from .utils_viz import (
-            fig_to_html, plot_feature_importance, plot_confusion,
-            plot_roc_ovr, plot_pred_proba_hist, tree_png_html
-        )
-
         figs_html = []
+
         # 1) Importancia de features
-        figs_html.append(fig_to_html(plot_feature_importance(model, X.columns, top=20)))
+        try:
+            figs_html.append(fig_to_html(plot_feature_importance(model, X.columns, top=20)))
+        except Exception:
+            pass
 
         # 2) Histograma de probabilidades
-        if proba is not None and proba.ndim >= 1:
-            figs_html.append(fig_to_html(plot_pred_proba_hist(proba)))
+        if proba is not None and np.ndim(proba) >= 1:
+            try:
+                figs_html.append(fig_to_html(plot_pred_proba_hist(proba)))
+            except Exception:
+                pass
 
         # 3) Matriz de confusión y 4) ROC si existe la columna objetivo
         TARGET = meta.get("target") or "duration"
@@ -136,13 +150,14 @@ def predict_csv(request):
                 tree_png_html(model, X.columns, class_names=None, tree_index=0, max_depth=3)
             )
         except Exception:
+            # Si el modelo no es RandomForest o no tiene .estimators_, lo ignoramos
             pass
 
         # --- Tabla de salida ---
         out = df.copy()
         out["prediction"] = y_pred
-        if proba.ndim == 2 and proba.shape[1] >= 2:
-            out["pred_proba"] = proba.max(axis=1)
+        if np.ndim(proba) == 2 and proba.shape[1] >= 2:
+            out["pred_proba"] = np.max(proba, axis=1)
 
         context = {
             "table_html": out.head(50).to_html(index=False),
@@ -152,6 +167,7 @@ def predict_csv(request):
 
     except Exception as e:
         return HttpResponseBadRequest(f"Error durante la predicción: {e}")
+
 
 # === API JSON para predicción por filas ===
 @api_view(["POST"])
@@ -175,7 +191,7 @@ def api_predict(request):
 
     try:
         df = pd.DataFrame(rows)
-        _, preds = predict_df(df)
+        _, preds = predict_df(df)  # reutilizas tu pipeline interno
         return Response({"predictions": preds})
     except Exception as e:
         return Response({"error": str(e)}, status=400)
