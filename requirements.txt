@@ -7,3 +7,4 @@ numpy
 scikit-learn
 joblib
 plotly>=5.15
+python-dotenv
