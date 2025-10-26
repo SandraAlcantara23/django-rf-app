@@ -1,0 +1,10 @@
+django
+djangorestframework
+gunicorn
+whitenoise
+python-dotenv
+psycopg2-binary
+dj-database-url
+pandas
+scikit-learn
+joblib
