@@ -26,3 +26,6 @@ ENV/
 # VSCode / PyCharm
 .vscode/
 .idea/
+
+# Datasets grandes
+datasets/
