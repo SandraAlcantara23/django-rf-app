@@ -1,10 +1,9 @@
-django
+Django>=5.0,<6.0
 djangorestframework
 gunicorn
 whitenoise
-python-dotenv
-psycopg2-binary
-dj-database-url
 pandas
+numpy
 scikit-learn
 joblib
+plotly>=5.15
