@@ -9,3 +9,11 @@ joblib
 plotly>=5.15
 python-dotenv
 dj-database-url
+
+# Visualización
+matplotlib
+seaborn
+plotly
+
+# Otros útiles
+requests
