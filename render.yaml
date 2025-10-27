@@ -1,14 +1,22 @@
 services:
-- type: web
-name: django-api
-env: python
-buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-startCommand: gunicorn config.wsgi:application --log-file -
-envVars:
-- key: SECRET_KEY
-generateValue: true
-- key: DEBUG
-value: "False"
-- key: ALLOWED_HOSTS
-value: "django-api.onrender.com"
-# Si usas Postgres de Render, añade DATABASE_URL automáticamente desde el add-on
+  - type: web
+    name: django-rf-app
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
+    startCommand: "gunicorn config.wsgi:application --timeout 120 --workers 1 --threads 2"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ENABLE_TREE_IMAGE
+        value: "0"        # puedes poner "1" si quieres forzar el árbol (activará matplotlib)
+      - key: MPLBACKEND
+        value: "Agg"
+      - key: MPLCONFIGDIR
+        value: "/tmp/mpl-cache"
