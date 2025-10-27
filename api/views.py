@@ -1,34 +1,48 @@
 # api/views.py
 import os
 from pathlib import Path
-from django.shortcuts import render
+
+import numpy as np
+import pandas as pd
 from django.http import HttpResponseBadRequest
+from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-import pandas as pd
-import numpy as np
 
-from .ml import model_exists, load_model, load_meta, predict_df, MODEL_PATH
-
+from .ml import MODEL_PATH, load_meta, model_exists, load_model, predict_df
 from .utils_viz import (
-    fig_to_html, plot_feature_importance, plot_confusion,
-    plot_roc_ovr, plot_pred_proba_hist, tree_png_html
+    fig_to_html,
+    plot_confusion,
+    plot_feature_importance,
+    plot_pred_proba_hist,
+    plot_roc_ovr,
+    tree_png_html,
 )
 
-ENABLE_TREE_IMAGE = os.getenv("ENABLE_TREE_IMAGE", "0") == "1"
 
+# -------- util --------
+def _as_bool(v) -> bool:
+    return str(v).strip().lower() in {"1", "true", "yes", "y", "t"}
+
+
+# Activa el render del árbol solo si quieres (o ponlo en Render env vars)
+ENABLE_TREE_IMAGE = _as_bool(os.getenv("ENABLE_TREE_IMAGE", "0"))
+
+
+# -------- endpoints --------
 @api_view(["GET"])
 def health(request):
     return Response({"status": "ok"})
 
+
 def home(request):
     """
-    Página inicial: no deserializamos el modelo (rápido). Solo leemos meta.
+    Página inicial: muestra estado del modelo y columnas esperadas (metadatos).
+    No deserializa el modelo para que cargue muy rápido.
     """
     ready = model_exists()
     feature_list = []
     model_filename = ""
-
     if ready:
         meta = load_meta() or {}
         feature_list = meta.get("features", [])
@@ -44,17 +58,16 @@ def home(request):
         },
     )
 
+
 def train_page(request):
     ready = model_exists()
     ctx = {"model_ready": ready, "model_path": Path(str(MODEL_PATH)).name if ready else ""}
     return render(request, "base.html", ctx)
 
+
 def predict_csv(request):
     """
-    Recibe CSV por POST y devuelve:
-      - Tabla con predicciones (primeras 50 filas)
-      - Gráficas (feature importance, hist proba, confusión y ROC si hay y_true)
-      - Árbol del RandomForest (opcional: ENABLE_TREE_IMAGE=1)
+    POST con un CSV -> devuelve tabla + gráficas (Plotly) y, opcionalmente, un árbol PNG.
     """
     if request.method != "POST":
         return HttpResponseBadRequest("Método no permitido")
@@ -62,26 +75,37 @@ def predict_csv(request):
     if not model_exists():
         return HttpResponseBadRequest("No hay modelo entrenado aún")
 
+    # Admite 'csv_file' o 'file'
     f = request.FILES.get("csv_file") or request.FILES.get("file")
     if not f:
         return HttpResponseBadRequest("Falta archivo CSV")
 
+    # Leer CSV
     try:
         df = pd.read_csv(f)
     except Exception as e:
         return HttpResponseBadRequest(f"Error leyendo CSV: {e}")
 
     try:
+        # Carga modelo + metadatos
         model, meta = load_model()
         features = meta.get("features")
-        # Selección de X
+
+        # Selección de X coherente con entrenamiento
         if features:
             cols = [c for c in features if c in df.columns]
             if not cols:
-                return HttpResponseBadRequest("El CSV no contiene columnas de entrenamiento.")
+                return HttpResponseBadRequest(
+                    "El CSV no contiene columnas de entrenamiento."
+                )
             X = df[cols].copy()
         else:
+            # Fallback: numéricas
             X = df.select_dtypes(include=[np.number]).copy()
+            if X.empty:
+                return HttpResponseBadRequest(
+                    "No se encontraron columnas numéricas para predecir."
+                )
 
         # Predicción
         y_pred = model.predict(X)
@@ -94,21 +118,25 @@ def predict_csv(request):
                 scores = model.decision_function(X)
                 proba = np.atleast_2d(scores).T if getattr(scores, "ndim", 1) == 1 else scores
             except Exception:
-                proba = np.atleast_2d(y_pred).T
+                proba = np.atleast_2d(y_pred).T  # fallback mínimo
 
+        # --------- Gráficas ----------
         figs_html = []
+
         # Importancias
         try:
             figs_html.append(fig_to_html(plot_feature_importance(model, X.columns, top=20)))
         except Exception:
             pass
-        # Hist proba
+
+        # Histograma de probas/scores
         if proba is not None and getattr(proba, "ndim", 0) >= 1:
             try:
                 figs_html.append(fig_to_html(plot_pred_proba_hist(proba)))
             except Exception:
                 pass
-        # Confusión + ROC si hay target
+
+        # Confusión + ROC si el CSV trae la columna objetivo
         TARGET = meta.get("target") or "duration"
         if TARGET in df.columns:
             y_true = df[TARGET].values
@@ -122,16 +150,19 @@ def predict_csv(request):
             except Exception:
                 pass
 
-        # Árbol (opcional para evitar coste de fuentes en Render)
-        if ENABLE_Boolean(ENABLE_TREE_IMAGE) and hasattr(model, "estimators_") and len(getattr(model, "estimators_", [])) > 0:
-            try:
-                figs_html.append(
-                    tree_png_html(model, X.columns, class_names=None, tree_index=0, max_depth=3)
+        # Árbol del bosque (opcional)
+        if ENABLE_TREE_IMAGE and hasattr(model, "estimators_") and len(model.estimators_) > 0:
+            figs_html.append(
+                tree_png_html(
+                    model,
+                    X.columns,
+                    class_names=None,  # la función deduce si es clasificación
+                    tree_index=0,
+                    max_depth=3,
                 )
-            except Exception:
-                # Si falla por fuentes, simplemente omitimos
-                pass
+            )
 
+        # Tabla de salida
         out = df.copy()
         out["prediction"] = y_pred
         if getattr(proba, "ndim", 0) == 2 and proba.shape[1] >= 2:
@@ -146,17 +177,24 @@ def predict_csv(request):
     except Exception as e:
         return HttpResponseBadRequest(f"Error durante la predicción: {e}")
 
-def ENABLE_Boolean(v):
-    return str(v).strip().lower() in {"1", "true", "yes", "y", "t"}
 
 @api_view(["POST"])
 def api_predict(request):
+    """
+    JSON:
+      {"rows":[{"feat1":1,"feat2":2.3,...}, ...]}
+    Respuesta:
+      {"predictions":[...]}
+    """
     if not model_exists():
         return Response({"error": "No model"}, status=400)
 
     rows = request.data.get("rows")
     if not isinstance(rows, list):
-        return Response({"error": "Formato inválido, se espera 'rows' lista de objetos"}, status=400)
+        return Response(
+            {"error": "Formato inválido: se espera 'rows' como lista de objetos"},
+            status=400,
+        )
 
     try:
         df = pd.DataFrame(rows)
