@@ -1,10 +1,10 @@
 Django>=5.0,<6.0
 djangorestframework
+scikit-learn==1.6.1
 gunicorn
 whitenoise
 pandas
 numpy
-scikit-learn
 joblib
 plotly>=5.15
 python-dotenv
