@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Resultados{% endblock %}
+{% block content %}
+  <h2 class="text-xl font-semibold mb-4">Resultados del modelo</h2>
+
+  <div class="bg-white rounded-2xl shadow p-4 overflow-auto">
+    {{ table_html|safe }}
+  </div>
+
+  <h2 class="text-xl font-semibold mt-8 mb-4">Gráficas</h2>
+  <div class="grid md:grid-cols-2 gap-6">
+    {% for fig in figs_html %}
+      <div class="bg-white rounded-2xl shadow p-4">
+        {{ fig|safe }}
+      </div>
+    {% empty %}
+      <p class="text-slate-600">No se generaron gráficas.</p>
+    {% endfor %}
+  </div>
+{% endblock %}
