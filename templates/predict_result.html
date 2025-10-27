@@ -1,18 +1,20 @@
 {% extends "base.html" %}
+{% block title %}Resultados{% endblock %}
 {% block content %}
-  <h2>Resultados del modelo</h2>
-  <div class="card">
+  <h2 class="text-xl font-semibold mb-4">Resultados del modelo</h2>
+
+  <div class="bg-white rounded-2xl shadow p-4 overflow-auto">
     {{ table_html|safe }}
   </div>
-  <h2>Gráficas</h2>
-  <div class="grid">
+
+  <h2 class="text-xl font-semibold mt-8 mb-4">Gráficas</h2>
+  <div class="grid md:grid-cols-2 gap-6">
     {% for fig in figs_html %}
-      <div class="card">{{ fig|safe }}</div>
+      <div class="bg-white rounded-2xl shadow p-4">
+        {{ fig|safe }}
+      </div>
+    {% empty %}
+      <p class="text-slate-600">No se generaron gráficas.</p>
     {% endfor %}
   </div>
 {% endblock %}
-<style>
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.card { background: #fff; padding: 12px; margin: 10px 0; border-radius: 8px;
-        box-shadow: 0 1px 4px rgba(0,0,0,.1); }
-</style>
